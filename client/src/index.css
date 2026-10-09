@@ -1,0 +1,58 @@
+/*
+ * Tailwind ⇄ MUI coexistence
+ * --------------------------
+ * Cascade layers settle every specificity fight up front:
+ *   theme < base (Tailwind preflight) < mui (Emotion, see AppThemeProvider) < components < utilities
+ * So MUI always beats Tailwind's reset, and a Tailwind utility in `className`
+ * always beats MUI's defaults, without `!important` or the `important` option.
+ */
+@layer theme, base, mui, components, utilities;
+@import 'tailwindcss';
+
+/* Dark variant follows MUI's color-scheme class on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Tailwind colors are aliases of MUI's CSS variables, so a single palette
+ * (src/theme/theme.ts) drives both systems and both color schemes.
+ */
+@theme inline {
+  --color-brand: var(--mui-palette-primary-main);
+  --color-brand-soft: color-mix(in srgb, var(--mui-palette-primary-main) 12%, transparent);
+  --color-leaf: var(--mui-palette-secondary-main);
+  --color-leaf-soft: color-mix(in srgb, var(--mui-palette-secondary-main) 12%, transparent);
+  --color-surface: var(--mui-palette-background-paper);
+  --color-canvas: var(--mui-palette-background-default);
+  --color-ink: var(--mui-palette-text-primary);
+  --color-ink-muted: var(--mui-palette-text-secondary);
+  --color-line: var(--mui-palette-divider);
+
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--mui-palette-background-default);
+}
+
+/* Content that appears right after the intro (e.g. the sign-in page) eases in. */
+.page-enter {
+  animation: page-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation-name: page-fade;
+  }
+  @keyframes page-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}

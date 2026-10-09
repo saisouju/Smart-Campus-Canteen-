@@ -1,0 +1,24 @@
+{
+  "name": "campus-canteen",
+  "private": true,
+  "version": "1.0.0",
+  "description": "University Canteen Management System (React + Express + SQLite)",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "seed": "npm run seed -w server",
+    "storybook": "npm run storybook -w client",
+    "build": "npm run build -w client",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.4",
+    "typescript": "^7.0.2"
+  }
+}

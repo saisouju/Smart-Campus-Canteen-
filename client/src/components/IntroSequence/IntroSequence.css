@@ -1,0 +1,511 @@
+/*
+ * Cinematic intro — one continuous 7.6s timeline.
+ *
+ *  0.0s ─ Scene 1  kinetic "HUNGRY?" (letters drop, spin, de-blur), dark stage
+ *  2.0s ─ Wipe 1   saffron iris from bottom-left
+ *  2.4s ─ Scene 2  masked line reveals: "Order ahead." "Skip the queue." "Pick up hot."
+ *  4.3s ─ Wipe 2   cream iris from top-right
+ *  4.8s ─ Scene 3  morph shape settles into a bowl, steam draws, title tracks in
+ *  6.9s ─ Exit     iris-out reveals the app
+ *
+ * A single .cine-shape morphs through every scene (dot → blob → square → pill → bowl)
+ * and .cine-camera dollies/pans the whole world, so scene changes never cut.
+ * All delays are derived from --t0 offsets set inline by IntroSequence.tsx.
+ */
+
+.cine-root {
+  --ink: #1c1917;
+  --night: #141210;
+  --saffron: #fb923c;
+  --ember: #c2410c;
+  --leaf: #166534;
+  --cream: #fff7ed;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  overflow: hidden;
+  background: var(--night);
+  color: var(--cream);
+  font-family: var(--font-display);
+  clip-path: circle(150% at 50% 50%);
+}
+
+.cine-root.is-leaving {
+  animation: cine-iris-out 0.7s var(--ease-in-out) forwards;
+}
+
+@keyframes cine-iris-out {
+  to {
+    clip-path: circle(0% at 50% 50%);
+  }
+}
+
+/* ── Camera rig ─────────────────────────────────────────────────────────── */
+.cine-stage {
+  position: absolute;
+  inset: 0;
+  perspective: 1200px;
+}
+
+.cine-camera {
+  position: absolute;
+  inset: -6%;
+  transform-style: preserve-3d;
+  animation: cine-camera 7.6s var(--ease-in-out) forwards;
+}
+
+@keyframes cine-camera {
+  0% {
+    transform: translate3d(0, 6%, -320px) rotateX(14deg) rotateZ(-3deg);
+  }
+  26% {
+    transform: translate3d(-1.5%, 0, -60px) rotateX(3deg) rotateZ(0deg);
+  }
+  55% {
+    transform: translate3d(2%, -1%, 0) rotateY(-7deg) rotateZ(0.5deg);
+  }
+  80% {
+    transform: translate3d(0, 0, 40px) rotateY(0deg);
+  }
+  100% {
+    transform: translate3d(0, -1%, 140px) rotateY(0deg);
+  }
+}
+
+/* ── Wipes (scene transitions) ──────────────────────────────────────────── */
+.cine-wipe {
+  position: absolute;
+  inset: 0;
+}
+
+.cine-wipe--1 {
+  background: var(--saffron);
+  clip-path: circle(0% at 0% 100%);
+  animation: cine-wipe-1 0.8s var(--ease-in-out) 2s forwards;
+}
+
+.cine-wipe--2 {
+  background: var(--cream);
+  clip-path: circle(0% at 100% 0%);
+  animation: cine-wipe-2 0.8s var(--ease-in-out) 4.3s forwards;
+}
+
+@keyframes cine-wipe-1 {
+  to {
+    clip-path: circle(150% at 0% 100%);
+  }
+}
+@keyframes cine-wipe-2 {
+  to {
+    clip-path: circle(150% at 100% 0%);
+  }
+}
+
+/* ── The morphing shape ─────────────────────────────────────────────────── */
+.cine-shape {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 46vmin;
+  height: 46vmin;
+  background: var(--ember);
+  border-radius: 50%;
+  animation: cine-morph 7.6s var(--ease-in-out) forwards;
+  will-change: transform, border-radius, width, height;
+}
+
+@keyframes cine-morph {
+  0% {
+    transform: scale(0.04);
+    border-radius: 50%;
+    background: var(--saffron);
+  }
+  8% {
+    transform: scale(0.18) rotate(0deg);
+    border-radius: 50%;
+  }
+  16% {
+    transform: scale(1) rotate(30deg);
+    border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%;
+    background: var(--ember);
+  }
+  24% {
+    transform: scale(1.12) rotate(70deg);
+    border-radius: 58% 42% 35% 65% / 52% 61% 39% 48%;
+  }
+  32% {
+    width: 30vmin;
+    height: 30vmin;
+    transform: translate(48vmin, 4vmin) rotate(135deg);
+    border-radius: 3vmin;
+    background: var(--ink);
+  }
+  44% {
+    width: 42vmin;
+    height: 16vmin;
+    transform: translate(46vmin, 14vmin) rotate(-12deg);
+    border-radius: 999px;
+    background: var(--leaf);
+  }
+  56% {
+    width: 12vmin;
+    height: 12vmin;
+    transform: translate(30vmin, -26vmin) rotate(0deg);
+    border-radius: 50%;
+    background: var(--ember);
+  }
+  68%,
+  100% {
+    width: 34vmin;
+    height: 17vmin;
+    transform: translate(0, -6vmin);
+    border-radius: 0 0 999px 999px;
+    background: var(--ember);
+  }
+}
+
+/* ── Scenes ─────────────────────────────────────────────────────────────── */
+.cine-scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Kinetic letters (scene 1 & 3 title) */
+.cine-word {
+  display: inline-flex;
+  white-space: pre;
+}
+
+.cine-letter {
+  display: inline-block;
+  opacity: 0;
+  animation:
+    cine-letter-in 0.75s var(--ease-back) forwards,
+    cine-letter-out 0.45s var(--ease-in-out) forwards;
+  animation-delay:
+    calc(var(--t0) + var(--i) * 55ms),
+    calc(var(--t1) + var(--i) * 30ms);
+}
+
+.cine-letter--stay {
+  animation: cine-letter-in 0.75s var(--ease-back) forwards;
+  animation-delay: calc(var(--t0) + var(--i) * 40ms);
+}
+
+@keyframes cine-letter-in {
+  from {
+    opacity: 0;
+    transform: translateY(80%) rotate(14deg) scale(0.6);
+    filter: blur(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+@keyframes cine-letter-out {
+  from {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-90%) rotate(-10deg) scale(1.2);
+    filter: blur(12px);
+  }
+}
+
+.cine-hungry {
+  font-size: clamp(3.5rem, 17vmin, 12rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--cream);
+}
+
+/* Scene 2: masked line reveals, left aligned so the shape owns the right side */
+.cine-scene--2 {
+  justify-content: flex-start;
+  padding-left: max(10vw, 2rem);
+}
+
+.cine-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1em;
+  font-size: clamp(2.2rem, 9vmin, 6.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.02;
+  color: var(--ink);
+}
+
+.cine-line {
+  overflow: hidden;
+  padding-bottom: 0.08em;
+}
+
+.cine-line > span {
+  display: block;
+  transform: translateY(110%);
+  animation:
+    cine-line-in 0.7s var(--ease-out) forwards,
+    cine-line-out 0.5s var(--ease-in-out) forwards;
+  animation-delay: var(--t0), var(--t1);
+}
+
+.cine-line--accent > span {
+  color: var(--cream);
+  -webkit-text-stroke: 0.02em var(--ink);
+}
+
+@keyframes cine-line-in {
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes cine-line-out {
+  to {
+    transform: translateX(-30%) skewX(-12deg);
+    opacity: 0;
+  }
+}
+
+/* Scene 3: logo reveal */
+.cine-logo {
+  position: absolute;
+  inset: 0;
+}
+
+.cine-steam {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22vmin;
+  height: 16vmin;
+  translate: -50% calc(-100% - 14.5vmin);
+  overflow: visible;
+}
+
+.cine-steam path {
+  fill: none;
+  stroke: var(--ember);
+  stroke-width: 3.2;
+  stroke-linecap: round;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  opacity: 0;
+  animation:
+    cine-draw 0.9s var(--ease-out) forwards,
+    cine-rise 2.4s ease-in-out infinite;
+  animation-delay: calc(5.2s + var(--i) * 0.15s), calc(6.1s + var(--i) * 0.2s);
+}
+
+@keyframes cine-draw {
+  from {
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes cine-rise {
+  0%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+  50% {
+    transform: translateY(-6%);
+    opacity: 0.6;
+  }
+}
+
+.cine-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% 5vmin;
+  white-space: nowrap;
+  font-size: clamp(2.2rem, 10vmin, 7rem);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--ink);
+  animation: cine-track 1.6s var(--ease-out) 5.3s both;
+}
+
+@keyframes cine-track {
+  from {
+    letter-spacing: 0.35em;
+  }
+  to {
+    letter-spacing: -0.03em;
+  }
+}
+
+.cine-tagline {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% calc(5vmin + clamp(2.2rem, 10vmin, 7rem) + 1.4rem);
+  white-space: nowrap;
+  font-family: var(--font-sans);
+  font-size: clamp(0.8rem, 2.2vmin, 1.1rem);
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ember);
+  opacity: 0;
+  animation: cine-fade-up 0.8s var(--ease-out) 6s forwards;
+}
+
+@keyframes cine-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Floating confetti dots for depth (parallax against the camera) */
+.cine-dot {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--saffron);
+  opacity: 0;
+  animation: cine-float 7.6s var(--ease-in-out) forwards;
+  animation-delay: var(--t0);
+}
+
+@keyframes cine-float {
+  10% {
+    opacity: 0.9;
+  }
+  60% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--dx), var(--dy), 0) scale(0.4);
+  }
+}
+
+/* ── Chrome: progress + skip ────────────────────────────────────────────── */
+.cine-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  width: 100%;
+  background: var(--ember);
+  transform-origin: left;
+  animation: cine-progress 7.6s linear forwards;
+}
+
+@keyframes cine-progress {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.cine-skip {
+  position: absolute;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  background: color-mix(in srgb, var(--cream) 85%, transparent);
+  color: var(--ink);
+  font: 600 0.85rem var(--font-sans);
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.cine-skip:focus-visible {
+  outline: 3px solid var(--saffron);
+  outline-offset: 2px;
+}
+
+/* Story/preview mode: pause everything at a given point on the timeline. */
+.cine-root[data-paused='true'] *,
+.cine-root[data-paused='true'] {
+  animation-play-state: paused !important;
+}
+
+/* ── Reduced-motion variant: still card, opacity only ───────────────────── */
+.cine-calm {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream);
+  color: var(--ink);
+  clip-path: none;
+  animation: cine-calm-in 0.6s ease-out both;
+}
+
+.cine-calm.is-fading {
+  animation: cine-calm-out 0.7s ease-in forwards;
+}
+
+.cine-calm-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.cine-calm-logo {
+  width: clamp(4rem, 14vmin, 7rem);
+  height: auto;
+}
+
+.cine-calm-title {
+  font-size: clamp(2.2rem, 9vmin, 6rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.cine-calm-tagline {
+  font-family: var(--font-sans);
+  font-size: clamp(0.8rem, 2.2vmin, 1.1rem);
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+
+@keyframes cine-calm-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes cine-calm-out {
+  to {
+    opacity: 0;
+  }
+}
