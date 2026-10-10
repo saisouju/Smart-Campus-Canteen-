@@ -1,6 +1,7 @@
 {
   "name": "campus-canteen",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "description": "University Canteen Management System (React + Express + SQLite)",
   "workspaces": [
