@@ -95,6 +95,7 @@ export function StudentDashboard({ user }: { user: User }) {
   useEffect(() => {
     try {
       if (trackedId) localStorage.setItem(trackingKey(user.id), trackedId);
+      else localStorage.removeItem(trackingKey(user.id));
     } catch {
       /* non-critical */
     }
