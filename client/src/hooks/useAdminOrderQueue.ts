@@ -11,8 +11,8 @@ const sortQueue = (orders: Order[]) =>
   });
 
 /**
- * Today's order queue kept in sync over SSE. `onChange` fires on every pushed
- * event so the dashboard can refresh dependent data (e.g. analytics).
+ * Today's order queue is polled for serverless compatibility. `onChange` fires
+ * when a refreshed queue differs so dependent data can be reloaded.
  */
 export function useAdminOrderQueue(adminId: string, onChange?: () => void) {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -21,6 +21,7 @@ export function useAdminOrderQueue(adminId: string, onChange?: () => void) {
   const [live, setLive] = useState<LiveState>('connecting');
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const onChangeRef = useRef(onChange);
+  const snapshotRef = useRef('');
   onChangeRef.current = onChange;
 
   const upsert = useCallback((order: Order) => {
@@ -29,10 +30,16 @@ export function useAdminOrderQueue(adminId: string, onChange?: () => void) {
 
   const refresh = useCallback(async () => {
     try {
-      setOrders(sortQueue(await api.admin.todaysOrders()));
+      const next = sortQueue(await api.admin.todaysOrders());
+      const snapshot = next.map((order) => `${order.id}:${order.status}`).join('|');
+      if (snapshotRef.current && snapshotRef.current !== snapshot) onChangeRef.current?.();
+      snapshotRef.current = snapshot;
+      setOrders(next);
       setError(null);
+      setLive('live');
     } catch (e) {
       setError(errorMessage(e));
+      setLive('polling');
     } finally {
       setLoading(false);
     }
@@ -40,18 +47,8 @@ export function useAdminOrderQueue(adminId: string, onChange?: () => void) {
 
   useEffect(() => {
     void refresh();
-    const source = new EventSource(api.admin.streamUrl(), { withCredentials: true });
-    const handle = (e: Event) => {
-      upsert(JSON.parse((e as MessageEvent<string>).data) as Order);
-      onChangeRef.current?.();
-    };
-    source.addEventListener('ready', () => setLive('live'));
-    source.addEventListener('created', handle);
-    source.addEventListener('updated', handle);
-    // EventSource reconnects on its own; resync once it's back so nothing is missed.
-    source.onerror = () => setLive('connecting');
-    source.onopen = () => void refresh();
-    return () => source.close();
+    const timer = window.setInterval(() => void refresh(), 5000);
+    return () => window.clearInterval(timer);
   }, [adminId, refresh, upsert]);
 
   const setStatus = useCallback(
@@ -60,6 +57,7 @@ export function useAdminOrderQueue(adminId: string, onChange?: () => void) {
       try {
         upsert(await api.admin.setStatus(id, status));
         setError(null);
+        onChangeRef.current?.();
       } catch (e) {
         setError(errorMessage(e));
       } finally {

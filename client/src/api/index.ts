@@ -34,12 +34,9 @@ export const api = {
     place: (order: PlaceOrderRequest) => request<Order>('/orders', { method: 'POST', body: order }),
     track: (id: string) => request<Order>(`/orders/track/${encodeURIComponent(id)}`),
     mine: () => request<Order[]>('/orders/mine'),
-    mineStreamUrl: () => apiUrl('/orders/mine/stream'),
-    streamUrl: (id: string) => apiUrl(`/orders/track/${encodeURIComponent(id)}/stream`),
   },
   temperature: {
     current: () => request<CanteenTemperature>('/temperature'),
-    streamUrl: () => apiUrl('/temperature/stream'),
   },
   admin: {
     analytics: () => request<AnalyticsSummary>('/admin/analytics'),
@@ -52,7 +49,6 @@ export const api = {
         '/admin/orders/verify',
         { method: 'POST', body: { qrCode } },
       ),
-    streamUrl: () => apiUrl('/admin/orders/stream'),
     admins: () => request<AdminEmail[]>('/admin/admins'),
     addAdmin: (email: string) => request<AdminEmail[]>('/admin/admins', { method: 'POST', body: { email } }),
     removeAdmin: (email: string) =>

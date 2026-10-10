@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
+import { initializeServerData } from './db/initialize.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/index.js';
 
@@ -13,7 +14,10 @@ export function createApp() {
   );
   app.use(express.json({ limit: '100kb' }));
 
-  app.use('/api', apiRouter);
+  app.use('/api', async (_req, _res, next) => {
+    await initializeServerData();
+    next();
+  }, apiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

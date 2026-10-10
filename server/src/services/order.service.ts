@@ -8,12 +8,11 @@ import {
   type PlaceOrderRequest,
   type TimeSlot,
 } from '@canteen/shared';
-import { db } from '../db/connection.js';
+import { db, type AsyncDatabase } from '../db/connection.js';
 import { toLocalDate, toLocalDateTime } from '../utils/dates.js';
 import { HttpError, notFound } from '../utils/httpError.js';
 import { listTimeSlots, resolveTimeSlot, SLOT_CONFIG } from '../utils/timeSlots.js';
 import { buildOrderVerificationPayload, verifyOrderVerificationPayload } from './orderVerification.js';
-import { orderEvents } from './orderEvents.js';
 import { findUser } from './user.service.js';
 
 interface OrderRow {
@@ -49,9 +48,9 @@ const ORDER_SELECT = `
 const placeholders = (n: number) => Array(n).fill('?').join(',');
 
 /** Attaches line items to order rows using a single extra query. */
-function hydrate(rows: OrderRow[]): Order[] {
+async function hydrate(rows: OrderRow[], database: AsyncDatabase = db): Promise<Order[]> {
   if (rows.length === 0) return [];
-  const lines = db
+  const lines = await database
     .prepare(
       `SELECT oi.order_id, oi.menu_item_id, m.name, oi.quantity, oi.price_at_order
        FROM order_items oi JOIN menu_items m ON m.id = oi.menu_item_id
@@ -84,21 +83,21 @@ function hydrate(rows: OrderRow[]): Order[] {
   }));
 }
 
-export function getOrder(id: string): Order {
-  const row = db.prepare(`${ORDER_SELECT} WHERE o.id = ?`).get(id) as OrderRow | undefined;
+export async function getOrder(id: string, database: AsyncDatabase = db): Promise<Order> {
+  const row = await database.prepare(`${ORDER_SELECT} WHERE o.id = ?`).get(id) as OrderRow | undefined;
   if (!row) throw notFound('Order');
-  return hydrate([row])[0]!;
+  return (await hydrate([row], database))[0]!;
 }
 
-export function listOrdersForUser(userId: string, limit = 10): Order[] {
-  const rows = db
+export async function listOrdersForUser(userId: string, limit = 10): Promise<Order[]> {
+  const rows = await db
     .prepare(`${ORDER_SELECT} WHERE o.user_id = ? ORDER BY o.created_at DESC LIMIT ?`)
     .all(userId, limit) as OrderRow[];
   return hydrate(rows);
 }
 
-export function listReadyOrdersForHardware(): Array<{ id: string; timeSlot: string; items: string }> {
-  return db
+export async function listReadyOrdersForHardware(): Promise<Array<{ id: string; timeSlot: string; items: string }>> {
+  return await db
     .prepare(
       `SELECT o.id, o.time_slot AS timeSlot,
               GROUP_CONCAT(oi.quantity || 'x ' || m.name, ', ') AS items
@@ -114,8 +113,8 @@ export function listReadyOrdersForHardware(): Array<{ id: string; timeSlot: stri
 }
 
 /** Today's orders: active ones first, oldest first within each group so the queue is FIFO. */
-export function listTodaysOrders(now = new Date()): Order[] {
-  const rows = db
+export async function listTodaysOrders(now = new Date()): Promise<Order[]> {
+  const rows = await db
     .prepare(
       `${ORDER_SELECT} WHERE date(o.created_at) = ?
        ORDER BY CASE o.status WHEN 'completed' THEN 1 ELSE 0 END, o.created_at ASC`,
@@ -124,15 +123,19 @@ export function listTodaysOrders(now = new Date()): Order[] {
   return hydrate(rows);
 }
 
-function bookedCount(label: string, now: Date): number {
-  const row = db
+async function bookedCount(label: string, now: Date, database: AsyncDatabase = db): Promise<number> {
+  const row = await database
     .prepare('SELECT COUNT(*) AS n FROM orders WHERE time_slot = ? AND date(created_at) = ?')
     .get(label, toLocalDate(now)) as { n: number };
   return row.n;
 }
 
-export function getTimeSlots(now = new Date()): TimeSlot[] {
-  return listTimeSlots(now, (label) => bookedCount(label, now));
+export async function getTimeSlots(now = new Date()): Promise<TimeSlot[]> {
+  const rows = await db
+    .prepare('SELECT time_slot, COUNT(*) AS count FROM orders WHERE date(created_at) = ? GROUP BY time_slot')
+    .all(toLocalDate(now)) as Array<{ time_slot: string; count: number }>;
+  const counts = new Map(rows.map((row) => [row.time_slot, row.count]));
+  return listTimeSlots(now, (label) => counts.get(label) ?? 0);
 }
 
 /** Short, human-friendly order code, e.g. "ORD-7K2Q9F". */
@@ -145,13 +148,13 @@ function newVerificationToken(): string {
   return randomBytes(18).toString('hex');
 }
 
-export function verifyOrderQrCode(qrCode: string): Order {
+export async function verifyOrderQrCode(qrCode: string): Promise<Order> {
   const trimmed = qrCode.trim();
   const match = /^canteen:\/\/verify\/(.+?)\/(.+)$/.exec(trimmed);
   if (!match) throw new HttpError(400, 'That QR code is invalid');
 
   const [, orderId, token] = match;
-  const order = db
+  const order = await db
     .prepare(`${ORDER_SELECT} WHERE o.id = ? AND o.verification_token = ?`)
     .get(orderId, token) as OrderRow | undefined;
 
@@ -160,11 +163,11 @@ export function verifyOrderQrCode(qrCode: string): Order {
     throw new HttpError(400, 'This QR code is invalid');
   }
 
-  return hydrate([order])[0]!;
+  return (await hydrate([order]))[0]!;
 }
 
-export function placeOrder(userId: string, request: PlaceOrderRequest, now = new Date()): Order {
-  const user = findUser(userId);
+export async function placeOrder(userId: string, request: PlaceOrderRequest, now = new Date()): Promise<Order> {
+  const user = await findUser(userId);
   if (!user) throw new HttpError(400, 'Unknown user');
 
   const slot = resolveTimeSlot(request.timeSlotId, now);
@@ -176,13 +179,13 @@ export function placeOrder(userId: string, request: PlaceOrderRequest, now = new
     quantities.set(line.menuItemId, (quantities.get(line.menuItemId) ?? 0) + line.quantity);
   }
 
-  const orderId = db.transaction((): string => {
-    if (bookedCount(slot.label, now) >= SLOT_CONFIG.capacity) {
+  const orderId = await db.transaction(async (transaction) => {
+    if (await bookedCount(slot.label, now, transaction) >= SLOT_CONFIG.capacity) {
       throw new HttpError(409, 'That pickup slot is fully booked');
     }
 
     const ids = [...quantities.keys()];
-    const items = db
+    const items = await transaction
       .prepare(`SELECT id, name, price, is_available FROM menu_items WHERE id IN (${placeholders(ids.length)})`)
       .all(...ids) as PricedItemRow[];
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -197,34 +200,32 @@ export function placeOrder(userId: string, request: PlaceOrderRequest, now = new
 
     const id = newOrderId();
     const verificationToken = newVerificationToken();
-    db.prepare(
+    await transaction.prepare(
       `INSERT INTO orders (id, user_id, total_amount, time_slot, status, verification_token, created_at)
        VALUES (?, ?, ?, ?, 'placed', ?, ?)`,
     ).run(id, user.id, Math.round(total * 100) / 100, slot.label, verificationToken, toLocalDateTime(now));
 
-    const insertLine = db.prepare(
+    const insertLine = transaction.prepare(
       'INSERT INTO order_items (order_id, menu_item_id, quantity, price_at_order) VALUES (?, ?, ?, ?)',
     );
-    for (const [itemId, qty] of quantities) insertLine.run(id, itemId, qty, byId.get(itemId)!.price);
+    for (const [itemId, qty] of quantities) await insertLine.run(id, itemId, qty, byId.get(itemId)!.price);
     return id;
-  })();
+  });
 
-  const created = getOrder(orderId);
-  orderEvents.publish({ type: 'created', order: created });
+  const created = await getOrder(orderId);
   return created;
 }
 
 /** Moves an order to `status`, or to the next lifecycle step when omitted. Only forward moves are allowed. */
-export function updateOrderStatus(id: string, status?: OrderStatus): Order {
-  const current = getOrder(id);
+export async function updateOrderStatus(id: string, status?: OrderStatus): Promise<Order> {
+  const current = await getOrder(id);
   const target = status ?? nextOrderStatus(current.status);
   if (!target) throw new HttpError(409, 'Order is already completed');
   if (ORDER_STATUSES.indexOf(target) <= ORDER_STATUSES.indexOf(current.status)) {
     throw new HttpError(409, `Cannot move order from ${current.status} to ${target}`);
   }
 
-  db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(target, id);
-  const updated = getOrder(id);
-  orderEvents.publish({ type: 'updated', order: updated });
+  await db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(target, id);
+  const updated = await getOrder(id);
   return updated;
 }

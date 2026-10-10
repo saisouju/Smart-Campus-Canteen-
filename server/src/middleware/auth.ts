@@ -19,10 +19,14 @@ export const cookieOptions = (maxAgeMs: number) =>
   ({ httpOnly: true, sameSite: 'lax', secure: config.secureCookies, path: '/', maxAge: maxAgeMs }) as const;
 
 /** Resolves the session cookie to a user on every request (role is read fresh from the DB). */
-export const attachUser: RequestHandler = (req, res, next) => {
-  const token = readCookie(req, SESSION_COOKIE);
-  if (token) res.locals.user = getSessionUser(token);
-  next();
+export const attachUser: RequestHandler = async (req, res, next) => {
+  try {
+    const token = readCookie(req, SESSION_COOKIE);
+    if (token) res.locals.user = await getSessionUser(token);
+    next();
+  } catch (error) {
+    next(error);
+  }
 };
 
 export function currentUser(res: Response): User {

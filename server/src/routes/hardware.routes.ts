@@ -7,11 +7,11 @@ import { hardwareTemperatureSchema } from './schemas.js';
 export const hardwareRouter = Router();
 hardwareRouter.use(requireHardwareKey);
 
-hardwareRouter.post('/temperature', (req, res) => {
+hardwareRouter.post('/temperature', async (req, res) => {
     const { celsius } = hardwareTemperatureSchema.parse(req.body);
-    res.json(setTemperatureFromHardware(celsius));
+    res.json(await setTemperatureFromHardware(celsius));
 });
 
-hardwareRouter.get('/orders', (_req, res) => {
-    res.json({ orders: listReadyOrdersForHardware() });
+hardwareRouter.get('/orders', async (_req, res) => {
+    res.json({ orders: await listReadyOrdersForHardware() });
 });

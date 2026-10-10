@@ -4,7 +4,7 @@ import { config } from '../config.js';
 import { ensureFoundingAdmin } from '../services/adminAccess.service.js';
 import { addDays, toLocalDateTime } from '../utils/dates.js';
 import { SLOT_CONFIG, slotLabelAt } from '../utils/timeSlots.js';
-import { db } from './connection.js';
+import { db, initializeDatabase, type AsyncDatabase } from './connection.js';
 
 /**
  * Fictional customers that give the charts and leaderboard some history.
@@ -62,7 +62,7 @@ function mulberry32(seed: number) {
   };
 }
 
-function seed(now = new Date(), withDemoData = config.seedDemoData): void {
+async function seed(transaction: AsyncDatabase, now = new Date(), withDemoData = config.seedDemoData): Promise<void> {
   const rand = mulberry32(20261007);
   const int = (min: number, max: number) => min + Math.floor(rand() * (max - min + 1));
   const totalWeight = MENU.reduce((s, m) => s + m[5], 0);
@@ -80,19 +80,16 @@ function seed(now = new Date(), withDemoData = config.seedDemoData): void {
   const slotStarts: number[] = [];
   for (let m = SLOT_CONFIG.openMinutes; m < SLOT_CONFIG.closeMinutes; m += SLOT_CONFIG.slotMinutes) slotStarts.push(m);
 
-  const insertUser = db.prepare('INSERT INTO users (id, name, email, role) VALUES (?, ?, ?, ?)');
-  const insertMenu = db.prepare(
-    'INSERT INTO menu_items (id, name, category, price, is_available) VALUES (?, ?, ?, ?, ?)',
-  );
-  const insertOrder = db.prepare(
+  let seq = 1;
+  const insertUser = transaction.prepare('INSERT INTO users (id, name, email, role) VALUES (?, ?, ?, ?)');
+  const insertOrder = transaction.prepare(
     'INSERT INTO orders (id, user_id, total_amount, time_slot, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
   );
-  const insertLine = db.prepare(
+  const insertLine = transaction.prepare(
     'INSERT INTO order_items (order_id, menu_item_id, quantity, price_at_order) VALUES (?, ?, ?, ?)',
   );
 
-  let seq = 1;
-  const createOrder = (createdAt: Date, status: OrderStatus) => {
+  const createOrder = async (createdAt: Date, status: OrderStatus) => {
     const id = `ORD-S${String(seq++).padStart(5, '0')}`;
     const lines = new Map<string, { qty: number; price: number }>();
     for (let i = int(1, 3); i > 0; i--) {
@@ -103,48 +100,51 @@ function seed(now = new Date(), withDemoData = config.seedDemoData): void {
     }
     const total = [...lines.values()].reduce((s, l) => s + l.qty * l.price, 0);
     const user = pickCustomer();
-    insertOrder.run(id, user.id, total, slotLabelAt(slotStarts[int(0, slotStarts.length - 1)]!), status, toLocalDateTime(createdAt));
-    for (const [itemId, l] of lines) insertLine.run(id, itemId, l.qty, l.price);
+    await insertOrder.run(id, user.id, total, slotLabelAt(slotStarts[int(0, slotStarts.length - 1)]!), status, toLocalDateTime(createdAt));
+    for (const [itemId, l] of lines) await insertLine.run(id, itemId, l.qty, l.price);
   };
 
-  db.transaction(() => {
-    for (const [id, name, category, price, available] of MENU) insertMenu.run(id, name, category, price, available ? 1 : 0);
-    if (!withDemoData) return;
-    for (const u of DEMO_USERS) insertUser.run(u.id, u.name, u.email, u.role);
+  const menuPlaceholders = MENU.map(() => '(?, ?, ?, ?, ?)').join(', ');
+  await transaction.prepare(
+    `INSERT INTO menu_items (id, name, category, price, is_available) VALUES ${menuPlaceholders}`,
+  ).run(...MENU.flatMap(([id, name, category, price, available]) => [id, name, category, price, available ? 1 : 0]));
+  if (!withDemoData) return;
+  for (const u of DEMO_USERS) await insertUser.run(u.id, u.name, u.email, u.role);
 
-    // Two weeks of completed history, so "this week" always has earlier days to chart.
-    for (let back = 14; back >= 1; back--) {
-      const day = addDays(now, -back);
-      const weekend = day.getDay() === 0 || day.getDay() === 6;
-      for (let n = weekend ? int(8, 15) : int(22, 40); n > 0; n--) {
-        const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), int(8, 19), int(0, 59), int(0, 59));
-        createOrder(at, 'completed');
-      }
+  // Two weeks of completed history, so "this week" always has earlier days to chart.
+  for (let back = 14; back >= 1; back--) {
+    const day = addDays(now, -back);
+    const weekend = day.getDay() === 0 || day.getDay() === 6;
+    for (let n = weekend ? int(8, 15) : int(22, 40); n > 0; n--) {
+      const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), int(8, 19), int(0, 59), int(0, 59));
+      await createOrder(at, 'completed');
     }
+  }
 
-    // Today's live queue: a mix of statuses placed during the last few hours.
-    const todayStatuses: OrderStatus[] = ['completed', 'completed', 'completed', 'ready', 'preparing', 'preparing', 'placed', 'placed', 'placed'];
-    todayStatuses.forEach((status, i) => {
-      const minutesAgo = (todayStatuses.length - i) * 12;
-      const at = new Date(now.getTime() - minutesAgo * 60_000);
-      // Keep the timestamp on today's date even right after midnight.
-      if (at.getDate() !== now.getDate()) at.setTime(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, i).getTime());
-      createOrder(at, status);
-    });
-  })();
+  // Today's live queue: a mix of statuses placed during the last few hours.
+  const todayStatuses: OrderStatus[] = ['completed', 'completed', 'completed', 'ready', 'preparing', 'preparing', 'placed', 'placed', 'placed'];
+  for (const [i, status] of todayStatuses.entries()) {
+    const minutesAgo = (todayStatuses.length - i) * 12;
+    const at = new Date(now.getTime() - minutesAgo * 60_000);
+    // Keep the timestamp on today's date even right after midnight.
+    if (at.getDate() !== now.getDate()) at.setTime(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, i).getTime());
+    await createOrder(at, status);
+  }
 }
 
 /** Seeds only when the menu is empty (fresh database). Returns true if it seeded. */
-export function seedIfEmpty(): boolean {
-  const { n } = db.prepare('SELECT COUNT(*) AS n FROM menu_items').get() as { n: number };
-  if (n > 0) return false;
-  seed();
-  return true;
+export async function seedIfEmpty(): Promise<boolean> {
+  return db.transaction(async (transaction) => {
+    const { n } = await transaction.prepare('SELECT COUNT(*) AS n FROM menu_items').get() as { n: number };
+    if (n > 0) return false;
+    await seed(transaction);
+    return true;
+  });
 }
 
 /** Wipes menu, orders, users and sessions. The admin email list is kept. */
-function reset(): void {
-  db.exec(`
+async function reset(): Promise<void> {
+  await db.exec(`
     DELETE FROM order_items; DELETE FROM orders; DELETE FROM sessions;
     DELETE FROM menu_items; DELETE FROM users;
     DELETE FROM sqlite_sequence WHERE name = 'order_items';
@@ -153,7 +153,8 @@ function reset(): void {
 
 // CLI: `npm run seed` wipes and reseeds.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  if (process.argv.includes('--reset')) reset();
-  console.log(seedIfEmpty() ? 'Database seeded.' : 'Database already has data; pass --reset to reseed.');
-  ensureFoundingAdmin();
+  await initializeDatabase();
+  if (process.argv.includes('--reset')) await reset();
+  console.log(await seedIfEmpty() ? 'Database seeded.' : 'Database already has data; pass --reset to reseed.');
+  await ensureFoundingAdmin();
 }

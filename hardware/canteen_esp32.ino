@@ -3,13 +3,15 @@
 #include <HTTPClient.h>
 #include <LiquidCrystal_I2C.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <Wire.h>
 
 // Set these values for the network where the API server is running.
 const char *WIFI_SSID = "YOUR_WIFI_NAME";
 const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 const char *HARDWARE_API_KEY = "SET_THE_SAME_KEY_AS_SERVER_ENV";
-const char *API_BASE_URL = "http://192.168.1.10:4000/api";
+const char *API_BASE_URL = "https://YOUR_PROJECT.vercel.app/api";
+const char *API_ROOT_CA_CERT = "PASTE_THE_ROOT_CA_CERTIFICATE_FOR_YOUR_VERCEL_HOST";
 
 #define BUZZER_PIN 25
 #define LED_PIN 26
@@ -24,7 +26,7 @@ const uint8_t MAX_READY_ORDERS = 5;
 
 DHT dht(DHT_PIN, DHT_TYPE);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-WiFiClient wifiClient;
+WiFiClientSecure wifiClient;
 uint32_t lastTemperaturePost = 0;
 uint32_t lastOrderPoll = 0;
 String previousReadyIds[MAX_READY_ORDERS];
@@ -146,6 +148,7 @@ void pollReadyOrders()
 void setup()
 {
     Serial.begin(115200);
+    wifiClient.setCACert(API_ROOT_CA_CERT);
     pinMode(LED_PIN, OUTPUT);
     pinMode(BUZZER_PIN, OUTPUT);
     digitalWrite(LED_PIN, LOW);

@@ -48,15 +48,15 @@ shared/src/index.ts           Domain types + constants used by both sides (one s
 server/src/
   db/        connection.ts · schema.ts (DDL) · seed.ts
   services/  menu · order · analytics · user · auth (domain check, name-from-email, sessions)
-             adminAccess (admin email list) · orderEvents (pub/sub for SSE)
+             adminAccess (admin email list) · canteenTemperature (persistent sensor reading)
   routes/    auth (Google OAuth) · menu · orders · admin · schemas.ts (zod request validation)
   middleware/auth.ts (session → user, requireAuth/requireRole) · errorHandler.ts
-  utils/     timeSlots.ts (slot generation + id→label mapping) · dates.ts · sse.ts
+  utils/     timeSlots.ts (slot generation + id→label mapping) · dates.ts
 client/src/
   components/   UI kit: every component has a *.stories.tsx next to it
   components/charts/  Recharts kit (separate entry → code-split with the admin view)
   features/     student/StudentDashboard · admin/AdminDashboard (compose the kit only)
-  hooks/        useResource · useCart · useOrderTracking (SSE) · useAdminOrderQueue (SSE)
+  hooks/        useResource · useCart · useOrderTracking · useAdminOrderQueue (polling)
   api/          typed fetch client for every route
   theme/        MUI theme + AppThemeProvider (shared by the app and Storybook)
   mocks/        fixtures used by stories
@@ -86,19 +86,16 @@ Screens never hand-roll UI. They import from `@/components` (and `@/components/c
 | GET | `/api/orders/time-slots` | Bookable 30-minute slots, 08:00–20:00, 15 orders per slot. Rolls over to tomorrow after closing |
 | POST | `/api/orders` | `{ timeSlotId, items[] }`, placed for the signed-in user. Maps the slot id (`2026-10-07@12:00-12:30`) to its label (`12:00 PM - 12:30 PM`). Prices come from the DB inside a transaction, and capacity and sold-out items are enforced |
 | GET | `/api/orders/track/:id` | Order snapshot (your own orders only; admins see all) |
-| GET | `/api/orders/track/:id/stream` | Server-Sent Events: pushes each status change. The client falls back to polling if the stream drops |
 | GET | `/api/orders/mine` | Your recent orders |
-| GET | `/api/orders/mine/stream` | Signed-in user's order change events |
 | POST | `/api/hardware/temperature` | **Hardware key.** `{ celsius, humidity? }` from the ESP32 sensor |
 | GET | `/api/hardware/orders` | **Hardware key.** Ready orders for the buzzer, LED and LCD |
 | GET | `/api/admin/analytics` | **Admin.** Current-week (Mon–Sun) earnings via `GROUP BY date(created_at)`, gaps filled with zero, plus top items and totals |
 | GET | `/api/admin/top-customers?limit=5..10` | **Admin.** All-time leaderboard by items ordered |
 | GET/POST/DELETE | `/api/admin/admins` | **Admin.** List, add (`{ email }`) and remove admin emails. The founding admin is protected |
 | GET | `/api/admin/orders` | **Admin.** Today's queue |
-| GET | `/api/admin/orders/stream` | **Admin.** SSE feed of created and updated orders |
 | PATCH | `/api/admin/orders/:id/status` | **Admin.** `{ status? }`. Omit `status` to advance one step. Orders only move forward |
 
-All order and admin routes require a signed-in session (the cookie, which SSE streams send too). **Admin** routes also require the admin role, read fresh from the database on every request. See `middleware/auth.ts`.
+Order status and temperature updates are polled by the client for serverless compatibility. All order and admin routes require a signed-in session. **Admin** routes also require the admin role, read fresh from the database on every request. See `middleware/auth.ts`.
 
 ## Intro sequence
 
@@ -119,7 +116,7 @@ It is pure CSS keyframes with no animation library, and it always comes **before
 
 The starter firmware is in `hardware/canteen_esp32.ino`. It uses the provided ESP32 pins for the DHT11 (GPIO 33), buzzer (25) and LED (26), plus an I2C 16x2 LCD on SDA 21 / SCL 22 at address `0x27`. The LCD wiring/address was not included in the original test sketch; adjust these constants to match the actual module. Install the `DHT sensor library`, `ArduinoJson` 6, and `LiquidCrystal_I2C` libraries in Arduino IDE.
 
-Set `HARDWARE_API_KEY` in `server/.env`, then enter that same key, Wi-Fi credentials, and the computer's LAN IP in the sketch's configuration. The ESP32 must reach the API host on port 4000; `localhost` will not work from the board. Both the browser and device then use the live DHT11 temperature. Simulated readings resume if the device stops reporting for 30 seconds.
+Set `HARDWARE_API_KEY` in the hosting environment, then enter that same key, Wi-Fi credentials, the public API URL, and the matching root CA certificate in the sketch's configuration. The ESP32 verifies TLS instead of sending its API key over plain HTTP. Both the browser and device then use the live DHT11 temperature. Simulated readings resume if the device stops reporting for 30 seconds.
 
 The board polls ready orders every 3 seconds. A newly ready order triggers a short buzzer beep; the LED stays on and the LCD shows a ready order while at least one order is ready. When the admin verifies pickup and the order becomes completed, it disappears from the ready queue and the LED turns off on the next poll. If multiple orders are ready, the LED remains on until all are completed. The current workflow does not use RFID, ultrasonic, IR, or relay readings to update an order; pickup is completed by admin QR verification.
 
@@ -133,4 +130,10 @@ The board polls ready orders every 3 seconds. A newly ready order triggers a sho
 | `npm run typecheck` | Typecheck all three workspaces |
 | `npm run seed` | Reset and reseed the SQLite database |
 
-Environment variables (in `server/.env`): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `HARDWARE_API_KEY`, `PUBLIC_URL` (default `http://localhost:5173`), `PORT` (default 4000), `DB_PATH`, `SEED_DEMO_DATA`, `CORS_ORIGIN`. Client side: `API_URL` (Vite proxy target), `VITE_API_URL`.
+## Vercel deployment
+
+The Vercel function in `api/[...path].ts` exposes the existing `/api/*` routes. In Vercel, import the repository with the project root as the root directory; `vercel.json` builds the unchanged Vite client into `client/dist`. Create a Turso/libSQL database and add `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` to the Vercel project's environment variables. Without these, the server uses local SQLite for development, which is not persistent on Vercel.
+
+Also configure `PUBLIC_URL` to the deployed Vercel origin, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `HARDWARE_API_KEY`, and `SEED_DEMO_DATA=false`. Add `${PUBLIC_URL}/api/auth/google/callback` to the Google OAuth redirect URI list. Deploy again after saving the environment variables. Set the firmware URL to the Vercel URL and paste the CA certificate for that host into `API_ROOT_CA_CERT` before using the ESP32.
+
+Environment variables for local development (`server/.env`): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `HARDWARE_API_KEY`, `PUBLIC_URL` (default `http://localhost:5173`), `PORT` (default 4000), `DB_PATH`, `SEED_DEMO_DATA`, `CORS_ORIGIN`. Production additionally uses `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`.

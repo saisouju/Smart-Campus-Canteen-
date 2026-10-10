@@ -34,35 +34,35 @@ export function nameFromEmail(email: string, fallback?: string): string {
 }
 
 /** Creates the user on first sign-in, refreshes name/role on later ones. */
-export function upsertSignedInUser(rawEmail: string, profileName?: string): User {
+export async function upsertSignedInUser(rawEmail: string, profileName?: string): Promise<User> {
   const email = normalizeEmail(rawEmail);
   const name = nameFromEmail(email, profileName);
-  const existing = db.prepare('SELECT id, role FROM users WHERE lower(email) = ?').get(email) as
+  const existing = await db.prepare('SELECT id, role FROM users WHERE lower(email) = ?').get(email) as
     | { id: string; role: User['role'] }
     | undefined;
 
-  const role: User['role'] = isAdminEmail(email)
+  const role: User['role'] = await isAdminEmail(email)
     ? 'admin'
     : existing?.role === 'faculty'
       ? 'faculty'
       : 'student';
 
   if (existing) {
-    db.prepare('UPDATE users SET name = ?, role = ? WHERE id = ?').run(name, role, existing.id);
+    await db.prepare('UPDATE users SET name = ?, role = ? WHERE id = ?').run(name, role, existing.id);
     return { id: existing.id, name, email, role };
   }
   const id = randomUUID();
-  db.prepare('INSERT INTO users (id, name, email, role) VALUES (?, ?, ?, ?)').run(id, name, email, role);
+  await db.prepare('INSERT INTO users (id, name, email, role) VALUES (?, ?, ?, ?)').run(id, name, email, role);
   return { id, name, email, role };
 }
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
 
 /** Returns the raw cookie token; only its hash is persisted. */
-export function createSession(userId: string): string {
+export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString('base64url');
   const expires = toLocalDateTime(addDays(new Date(), config.sessionTtlDays));
-  db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(
+  await db.prepare('INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)').run(
     hashToken(token),
     userId,
     expires,
@@ -70,8 +70,8 @@ export function createSession(userId: string): string {
   return token;
 }
 
-export function getSessionUser(token: string): User | undefined {
-  return db
+export async function getSessionUser(token: string): Promise<User | undefined> {
+  return await db
     .prepare(
       `SELECT u.id, u.name, u.email, u.role
        FROM sessions s JOIN users u ON u.id = s.user_id
@@ -80,10 +80,10 @@ export function getSessionUser(token: string): User | undefined {
     .get(hashToken(token), toLocalDateTime(new Date())) as User | undefined;
 }
 
-export function deleteSession(token: string): void {
-  db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
+export async function deleteSession(token: string): Promise<void> {
+  await db.prepare('DELETE FROM sessions WHERE token_hash = ?').run(hashToken(token));
 }
 
-export function pruneExpiredSessions(): void {
-  db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(toLocalDateTime(new Date()));
+export async function pruneExpiredSessions(): Promise<void> {
+  await db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(toLocalDateTime(new Date()));
 }

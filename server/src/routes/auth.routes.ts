@@ -85,8 +85,8 @@ authRouter.get('/google/callback', async (req, res) => {
       (payload.hd === undefined || payload.hd === config.allowedDomain);
     if (!domainOk) return res.redirect(backToApp('domain'));
 
-    const user = upsertSignedInUser(email, payload?.name);
-    const token = createSession(user.id);
+    const user = await upsertSignedInUser(email, payload?.name);
+    const token = await createSession(user.id);
     res.cookie(SESSION_COOKIE, token, cookieOptions(config.sessionTtlDays * 86_400_000));
     res.redirect(backToApp());
   } catch (e) {
@@ -96,9 +96,9 @@ authRouter.get('/google/callback', async (req, res) => {
 });
 
 /** POST /api/auth/logout */
-authRouter.post('/logout', (req, res) => {
+authRouter.post('/logout', async (req, res) => {
   const token = readCookie(req, SESSION_COOKIE);
-  if (token) deleteSession(token);
+  if (token) await deleteSession(token);
   res.clearCookie(SESSION_COOKIE, { path: '/' });
   res.status(204).end();
 });

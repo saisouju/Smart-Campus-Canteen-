@@ -15,6 +15,8 @@ const publicUrl = (env.PUBLIC_URL ?? 'http://localhost:5173').replace(/\/$/, '')
 export const config = {
   port: Number(env.PORT ?? 4000),
   dbPath: env.DB_PATH ?? path.join(serverRoot, 'data', 'canteen.db'),
+  tursoDatabaseUrl: env.TURSO_DATABASE_URL ?? '',
+  tursoAuthToken: env.TURSO_AUTH_TOKEN ?? '',
   /** Origin the browser uses (Vite dev server in development). */
   publicUrl,
   corsOrigin: env.CORS_ORIGIN?.split(',') ?? [publicUrl],

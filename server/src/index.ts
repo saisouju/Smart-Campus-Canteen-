@@ -2,14 +2,11 @@
 import { config, googleConfigured } from './config.js';
 import { createApp } from './app.js';
 import { DB_PATH } from './db/connection.js';
-import { seedIfEmpty } from './db/seed.js';
-import { ensureFoundingAdmin } from './services/adminAccess.service.js';
 import { pruneExpiredSessions } from './services/auth.service.js';
+import { initializeServerData } from './db/initialize.js';
 
-if (seedIfEmpty()) console.log('Seeded empty database with demo data');
-ensureFoundingAdmin();
-pruneExpiredSessions();
-setInterval(pruneExpiredSessions, 60 * 60_000).unref();
+await initializeServerData();
+setInterval(() => void pruneExpiredSessions(), 60 * 60_000).unref();
 
 if (!googleConfigured) {
   console.warn('⚠ GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET missing: sign-in is disabled. See server/.env.example');

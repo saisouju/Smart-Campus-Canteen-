@@ -46,23 +46,22 @@ export function AdminDashboard({ admin }: { admin: User }) {
 
   useEffect(() => {
     let closed = false;
-    let source: EventSource | null = null;
 
     const load = async () => {
-      const current = await api.temperature.current();
-      if (!closed) setTemperature(current);
+      try {
+        const current = await api.temperature.current();
+        if (!closed) setTemperature(current);
+      } catch {
+        // Keep the latest reading visible during temporary network failures.
+      }
     };
 
     void load();
-    source = new EventSource(api.temperature.streamUrl());
-    source.addEventListener('temperature', (event: MessageEvent<string>) => {
-      if (closed) return;
-      setTemperature(JSON.parse(event.data) as CanteenTemperature);
-    });
+    const timer = window.setInterval(() => void load(), 5000);
 
     return () => {
       closed = true;
-      source?.close();
+      window.clearInterval(timer);
     };
   }, []);
 

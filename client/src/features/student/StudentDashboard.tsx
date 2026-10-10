@@ -55,23 +55,22 @@ export function StudentDashboard({ user }: { user: User }) {
 
   useEffect(() => {
     let closed = false;
-    let source: EventSource | null = null;
 
     const load = async () => {
-      const current = await api.temperature.current();
-      if (!closed) setTemperature(current);
+      try {
+        const current = await api.temperature.current();
+        if (!closed) setTemperature(current);
+      } catch {
+        // Keep the latest reading visible during temporary network failures.
+      }
     };
 
     void load();
-    source = new EventSource(api.temperature.streamUrl());
-    source.addEventListener('temperature', (event: MessageEvent<string>) => {
-      if (closed) return;
-      setTemperature(JSON.parse(event.data) as CanteenTemperature);
-    });
+    const timer = window.setInterval(() => void load(), 5000);
 
     return () => {
       closed = true;
-      source?.close();
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -82,13 +81,8 @@ export function StudentDashboard({ user }: { user: User }) {
   }, [slots.reload]);
 
   useEffect(() => {
-    const source = new EventSource(api.orders.mineStreamUrl(), { withCredentials: true });
-    source.addEventListener('change', () => void myOrders.reload());
     const refresh = window.setInterval(() => void myOrders.reload(), 15_000);
-    return () => {
-      source.close();
-      window.clearInterval(refresh);
-    };
+    return () => window.clearInterval(refresh);
   }, [myOrders.reload]);
 
   // With nothing remembered, follow the newest active order.
