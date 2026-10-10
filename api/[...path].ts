@@ -1,9 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import type { Request, Response } from 'express';
-import { createApp } from '../server/src/app.js';
-
-const app = createApp();
+import { vercelHandler } from '../server/src/vercelHandler.js';
 
 export default function handler(request: VercelRequest, response: VercelResponse) {
-    return app(request as unknown as Request, response as unknown as Response);
+    return vercelHandler(request, response);
 }
