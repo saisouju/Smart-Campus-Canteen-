@@ -126,7 +126,7 @@ The board polls ready orders every 3 seconds. A newly ready order triggers a sho
 |---|---|
 | `npm run dev` | API (tsx watch) + Vite dev server with `/api` proxy |
 | `npm run storybook` | Storybook on :6006 |
-| `npm run build` | Typecheck + production build of the client |
+| `npm run build` | Compile shared package, typecheck and production-build the client |
 | `npm run typecheck` | Typecheck all three workspaces |
 | `npm run seed` | Reset and reseed the SQLite database |
 

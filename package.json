@@ -10,12 +10,12 @@
     "client"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "dev:server": "npm run dev -w server",
-    "dev:client": "npm run dev -w client",
-    "seed": "npm run seed -w server",
+    "dev": "npm run build -w shared && concurrently -n api,web -c blue,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run build -w shared && npm run dev -w server",
+    "dev:client": "npm run build -w shared && npm run dev -w client",
+    "seed": "npm run build -w shared && npm run seed -w server",
     "storybook": "npm run storybook -w client",
-    "build": "npm run build -w client",
+    "build": "npm run build -w shared && npm run build -w client",
     "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w client"
   },
   "devDependencies": {
